@@ -40,7 +40,7 @@ impl DisPlay {
             ));
         }
         
-        // 移除最后一个逗号和空格
+        // Remove the last comma and space
         if positions.ends_with(", ") {
             positions.truncate(positions.len() - 2);
         }
@@ -70,7 +70,7 @@ impl DisPlay {
             ));
         }
         
-        // 移除最后一个逗号和空格
+        // Remove the last comma and space
         if positions.ends_with(", ") {
             positions.truncate(positions.len() - 2);
         }

@@ -75,7 +75,7 @@ fn handle_file_path_vec(query: String, file_paths: Vec<String>, ignore_case: boo
         let output_file = canonical_dir.join("output.txt");
         let output = get_output(display_map, true);
         fs::write(&output_file, output)?;
-        println!("输出已保存到: {:?}", output_file);
+        println!("Output saved to: {:?}", output_file);
     }
     Ok(())
 }
@@ -87,10 +87,10 @@ fn get_output(display_map: HashMap<String, Vec<DisPlay>>, pure_text_output: bool
         let file_name = file_name_vec.first().unwrap_or(&"Unknown file").to_string();
         if !displays.is_empty() {
             if !pure_text_output {
-                let tip = format!("在文件 '{}' 中找到以下匹配: \n", file_name.yellow());
+                let tip = format!("Found the following matches in file '{}': \n", file_name.yellow());
                 output.push_str(&tip);
             } else {
-                let tip = format!("在文件 '{}' 中找到以下匹配: \n", file_name);
+                let tip = format!("Found the following matches in file '{}': \n", file_name);
                 output.push_str(&tip);
             }
             for display in displays {
@@ -115,19 +115,19 @@ fn find_valid_paths(file_paths: Vec<String>) -> Result<Vec<PathBuf>> {
         let path = PathBuf::from(&file_path);
         
         if !path.exists() {
-            eprintln!("警告: '{}' 不存在", file_path);
+            eprintln!("Warning: '{}' does not exist", file_path);
             continue;
         }
         
         if !path.is_file() {
-            eprintln!("警告: '{}' 不是有效的文件", file_path);
+            eprintln!("Warning: '{}' is not a valid file", file_path);
             continue;
         }
         
         let canonical_path = match path.canonicalize() {
             Ok(p) => p,
             Err(e) => {
-                eprintln!("警告: 无法规范化路径 '{}': {}", file_path, e);
+                eprintln!("Warning: Cannot canonicalize path '{}': {}", file_path, e);
                 continue;
             }
         };
@@ -138,7 +138,7 @@ fn find_valid_paths(file_paths: Vec<String>) -> Result<Vec<PathBuf>> {
     }
     
     if valid_paths.is_empty() {
-        return Err(anyhow!("没有找到有效的文件"));
+        return Err(anyhow!("No valid files found"));
     }
     
     Ok(valid_paths)
@@ -154,7 +154,7 @@ fn find_content_in_file(query: &String, file: &mut File, ignore_case: bool) -> R
         let ori_query = query_str.to_string();
         let ori_line = line.clone();
 
-        // 如果忽略大小写，则转换为小写
+        // Convert to lowercase if ignoring case
         let line = if ignore_case {
             line.to_lowercase()
         } else {
@@ -197,16 +197,16 @@ fn find_content_in_file(query: &String, file: &mut File, ignore_case: bool) -> R
 
 fn handle_dir_vec(query: String, dir_paths: Vec<String>, ignore_case: bool, out_dir: Option<String>) -> Result<()> {
     if dir_paths.len() > 1 {
-        return Err(anyhow!("只能指定一个目录路径"));
+        return Err(anyhow!("Only one directory path can be specified"));
     }
-    let dir_path = dir_paths.first().ok_or_else(|| anyhow!("必须提供一个目录路径"))?;
+    let dir_path = dir_paths.first().ok_or_else(|| anyhow!("Must provide a directory path"))?;
     let valid_file_path = find_valid_dirs(dir_path.clone())?;
     
-    // 使用并行处理
+    // Use parallel processing
     let mut processor = ParallelProcessor::new(query);
     let results = processor.process_directory(valid_file_path, ignore_case)?;
     
-    // 将DashMap转换为HashMap用于输出
+    // Convert DashMap to HashMap for output
     let mut display_map: HashMap<String, Vec<DisPlay>> = HashMap::new();
     for entry in results.iter() {
         display_map.insert(entry.key().clone(), entry.value().to_vec());
@@ -220,7 +220,7 @@ fn handle_dir_vec(query: String, dir_paths: Vec<String>, ignore_case: bool, out_
         let output_file = canonical_dir.join("output.txt");
         let output = get_output(display_map, true);
         fs::write(&output_file, output)?;
-        println!("输出已保存到: {:?}", output_file);
+        println!("Output saved to: {:?}", output_file);
     }
     Ok(())
 }
@@ -228,15 +228,15 @@ fn handle_dir_vec(query: String, dir_paths: Vec<String>, ignore_case: bool, out_
 fn find_valid_dirs(dir_path: String) -> Result<PathBuf> {
     let path = PathBuf::from(&dir_path);
     if !path.exists() {
-        return Err(anyhow!("目录 '{}' 不存在", dir_path));
+        return Err(anyhow!("Directory '{}' does not exist", dir_path));
     }
     if !path.is_dir() {
-        return Err(anyhow!("路径 '{}' 不是一个有效的目录", dir_path));
+        return Err(anyhow!("Path '{}' is not a valid directory", dir_path));
     }
     let canonical_path = match path.canonicalize() {
         Ok(p) => p,
         Err(e) => {
-            return Err(anyhow!("警告: 无法规范化路径 '{}': {}", dir_path, e))
+            return Err(anyhow!("Warning: Cannot canonicalize path '{}': {}", dir_path, e))
         }
     };
         
@@ -250,25 +250,25 @@ fn main() -> Result<()> {
         Some(Commands::Find { query, file_path, dir, ignore_case, output }) => {
             match (file_path.is_empty(), dir.is_empty()) {
                 (false, false) => {
-                    return Err(anyhow!("只能指定 file_path 或 dir 中的一个参数，不能同时指定两者"));
+                    return Err(anyhow!("Can only specify one of file_path or dir, not both"));
                 }
                 (true, true) => {
-                    return Err(anyhow!("必须指定 file_path 或 dir 中的一个参数"));
+                    return Err(anyhow!("Must specify either file_path or dir"));
                 }
                 (false, true) => {
-                    println!("在文件 {:?} 中查找内容", file_path);
+                    println!("Searching in files {:?}", file_path);
                     if let Some(out_dir) = output.clone() {
                         if !PathBuf::from(&out_dir).exists() {
-                            return Err(anyhow!("输出目录不存在"));
+                            return Err(anyhow!("Output directory does not exist"));
                         }
                     }
                     handle_file_path_vec(query, file_path, ignore_case, output)?;
                 }
                 (true, false) => {
-                    println!("在目录 {:?} 中查找内容", dir);
+                    println!("Searching in directory {:?}", dir);
                     if let Some(out_dir) = output.clone() {
                         if !PathBuf::from(&out_dir).exists() {
-                            return Err(anyhow!("输出目录不存在"));
+                            return Err(anyhow!("Output directory does not exist"));
                         }
                     }
                     handle_dir_vec(query, dir, ignore_case, output)?;
@@ -276,10 +276,10 @@ fn main() -> Result<()> {
             }
         }
         Some(Commands::Diff { left_file, right_file }) => {
-            println!("比较文件 {} 和 {}", left_file, right_file);
+            println!("Comparing files {} and {}", left_file, right_file);
         }
         None => {
-            return Err(anyhow!("请指定一个子命令: find 或 diff"));
+            return Err(anyhow!("Please specify a subcommand: find or diff"));
         }
     }
 
