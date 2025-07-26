@@ -1,0 +1,13 @@
+[package]
+name = "rspfind"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.98"
+clap = { version = "4.5.41", features = ["derive"] }
+owo-colors = "4.2.2"
+walkdir = "2.5.0"
+indicatif = "0.17.8"
+rayon = "1.10.0"
+dashmap = "6.1.0"
