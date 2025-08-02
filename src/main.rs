@@ -1,10 +1,10 @@
+use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::path::{PathBuf};
-use std::collections::{HashSet, HashMap};
+use std::path::PathBuf;
 use std::process::Output;
 
+use anyhow::{Result, anyhow};
 use clap::{Parser, Subcommand};
-use anyhow::{anyhow, Result};
 
 mod file;
 use file::File;
@@ -17,6 +17,8 @@ mod parallel;
 use parallel::ParallelProcessor;
 
 use owo_colors::OwoColorize;
+
+use similar::{ChangeTag, TextDiff};
 
 #[derive(Parser)]
 #[command(name = "rspfind")]
@@ -46,15 +48,20 @@ enum Commands {
         output: Option<String>,
     },
     Diff {
-        #[arg(short, long)]
-        left_file: String,
+        #[arg(long)]
+        file1: String,
 
-        #[arg(short, long)]
-        right_file: String,
-    }
+        #[arg(long)]
+        file2: String,
+    },
 }
 
-fn handle_file_path_vec(query: String, file_paths: Vec<String>, ignore_case: bool, out_dir: Option<String>) -> Result<()> {
+fn handle_file_path_vec(
+    query: String,
+    file_paths: Vec<String>,
+    ignore_case: bool,
+    out_dir: Option<String>,
+) -> Result<()> {
     let valid_file_paths = find_valid_paths(file_paths)?;
     let mut display_map: HashMap<String, Vec<DisPlay>> = HashMap::new();
     for file_path in valid_file_paths {
@@ -63,7 +70,11 @@ fn handle_file_path_vec(query: String, file_paths: Vec<String>, ignore_case: boo
             Ok(c) => c,
             Err(_) => continue,
         };
-        let mut file = File::new(file_path.to_string_lossy().to_string(), file::Format::Text, content);
+        let mut file = File::new(
+            file_path.to_string_lossy().to_string(),
+            file::Format::Text,
+            content,
+        );
         let display_list = find_content_in_file(&query, &mut file, ignore_case)?;
         display_map.insert(file.name.clone(), display_list);
     }
@@ -87,7 +98,10 @@ fn get_output(display_map: HashMap<String, Vec<DisPlay>>, pure_text_output: bool
         let file_name = file_name_vec.first().unwrap_or(&"Unknown file").to_string();
         if !displays.is_empty() {
             if !pure_text_output {
-                let tip = format!("Found the following matches in file '{}': \n", file_name.yellow());
+                let tip = format!(
+                    "Found the following matches in file '{}': \n",
+                    file_name.yellow()
+                );
                 output.push_str(&tip);
             } else {
                 let tip = format!("Found the following matches in file '{}': \n", file_name);
@@ -110,20 +124,20 @@ fn get_output(display_map: HashMap<String, Vec<DisPlay>>, pure_text_output: bool
 fn find_valid_paths(file_paths: Vec<String>) -> Result<Vec<PathBuf>> {
     let mut unique_paths = HashSet::new();
     let mut valid_paths = Vec::new();
-    
+
     for file_path in file_paths {
         let path = PathBuf::from(&file_path);
-        
+
         if !path.exists() {
             eprintln!("Warning: '{}' does not exist", file_path);
             continue;
         }
-        
+
         if !path.is_file() {
             eprintln!("Warning: '{}' is not a valid file", file_path);
             continue;
         }
-        
+
         let canonical_path = match path.canonicalize() {
             Ok(p) => p,
             Err(e) => {
@@ -131,24 +145,28 @@ fn find_valid_paths(file_paths: Vec<String>) -> Result<Vec<PathBuf>> {
                 continue;
             }
         };
-        
+
         if unique_paths.insert(canonical_path.clone()) {
             valid_paths.push(canonical_path);
         }
     }
-    
+
     if valid_paths.is_empty() {
         return Err(anyhow!("No valid files found"));
     }
-    
+
     Ok(valid_paths)
 }
 
-fn find_content_in_file(query: &String, file: &mut File, ignore_case: bool) -> Result<Vec<DisPlay>> {
+fn find_content_in_file(
+    query: &String,
+    file: &mut File,
+    ignore_case: bool,
+) -> Result<Vec<DisPlay>> {
     let mut display_list = Vec::new();
     let file_name = file.name.clone();
     let query_str = query.as_str();
-    
+
     let mut line_index = 0;
     while let Some(line) = file.next_line() {
         let ori_query = query_str.to_string();
@@ -171,47 +189,54 @@ fn find_content_in_file(query: &String, file: &mut File, ignore_case: bool) -> R
             line_index += 1;
             continue;
         }
-        
+
         let mut match_indices = Vec::new();
         let mut matched_str = "";
-        
+
         for (start, matched) in line.match_indices(&query_str) {
             match_indices.push(start);
             matched_str = matched;
         }
-        
+
         let display = DisPlay::new(
-            ori_query, 
-            file_name.clone(), 
-            line_index, 
-            match_indices, 
+            ori_query,
+            file_name.clone(),
+            line_index,
+            match_indices,
             ori_line,
-            matched_str.to_string()
+            matched_str.to_string(),
         );
         display_list.push(display);
         line_index += 1;
     }
-    
+
     Ok(display_list)
 }
 
-fn handle_dir_vec(query: String, dir_paths: Vec<String>, ignore_case: bool, out_dir: Option<String>) -> Result<()> {
+fn handle_dir_vec(
+    query: String,
+    dir_paths: Vec<String>,
+    ignore_case: bool,
+    out_dir: Option<String>,
+) -> Result<()> {
     if dir_paths.len() > 1 {
         return Err(anyhow!("Only one directory path can be specified"));
     }
-    let dir_path = dir_paths.first().ok_or_else(|| anyhow!("Must provide a directory path"))?;
+    let dir_path = dir_paths
+        .first()
+        .ok_or_else(|| anyhow!("Must provide a directory path"))?;
     let valid_file_path = find_valid_dirs(dir_path.clone())?;
-    
+
     // Use parallel processing
     let mut processor = ParallelProcessor::new(query);
     let results = processor.process_directory(valid_file_path, ignore_case)?;
-    
+
     // Convert DashMap to HashMap for output
     let mut display_map: HashMap<String, Vec<DisPlay>> = HashMap::new();
     for entry in results.iter() {
         display_map.insert(entry.key().clone(), entry.value().to_vec());
     }
-    
+
     let output = get_output(display_map.clone(), false);
     println!("{}", output);
     if let Some(out_dir) = out_dir {
@@ -236,47 +261,78 @@ fn find_valid_dirs(dir_path: String) -> Result<PathBuf> {
     let canonical_path = match path.canonicalize() {
         Ok(p) => p,
         Err(e) => {
-            return Err(anyhow!("Warning: Cannot canonicalize path '{}': {}", dir_path, e))
+            return Err(anyhow!(
+                "Warning: Cannot canonicalize path '{}': {}",
+                dir_path,
+                e
+            ));
         }
     };
-        
+
     Ok(canonical_path)
+}
+
+fn handle_diff(file1: String, file2: String) -> Result<()> {
+    let content1 = fs::read_to_string(PathBuf::from(file1))?;
+    let content2 = fs::read_to_string(PathBuf::from(file2))?;
+
+    let diff = TextDiff::from_lines(&content1, &content2);
+
+    for change in diff.iter_all_changes() {
+        let sign = match change.tag() {
+            ChangeTag::Delete => "-",
+            ChangeTag::Insert => "+",
+            ChangeTag::Equal => " ",
+        };
+        print!("{}{}", sign, change);
+    }
+    Ok(())
 }
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Some(Commands::Find { query, file_path, dir, ignore_case, output }) => {
-            match (file_path.is_empty(), dir.is_empty()) {
-                (false, false) => {
-                    return Err(anyhow!("Can only specify one of file_path or dir, not both"));
-                }
-                (true, true) => {
-                    return Err(anyhow!("Must specify either file_path or dir"));
-                }
-                (false, true) => {
-                    println!("Searching in files {:?}", file_path);
-                    if let Some(out_dir) = output.clone() {
-                        if !PathBuf::from(&out_dir).exists() {
-                            return Err(anyhow!("Output directory does not exist"));
-                        }
-                    }
-                    handle_file_path_vec(query, file_path, ignore_case, output)?;
-                }
-                (true, false) => {
-                    println!("Searching in directory {:?}", dir);
-                    if let Some(out_dir) = output.clone() {
-                        if !PathBuf::from(&out_dir).exists() {
-                            return Err(anyhow!("Output directory does not exist"));
-                        }
-                    }
-                    handle_dir_vec(query, dir, ignore_case, output)?;
-                }
+        Some(Commands::Find {
+            query,
+            file_path,
+            dir,
+            ignore_case,
+            output,
+        }) => match (file_path.is_empty(), dir.is_empty()) {
+            (false, false) => {
+                return Err(anyhow!(
+                    "Can only specify one of file_path or dir, not both"
+                ));
             }
-        }
-        Some(Commands::Diff { left_file, right_file }) => {
-            println!("Comparing files {} and {}", left_file, right_file);
+            (true, true) => {
+                return Err(anyhow!("Must specify either file_path or dir"));
+            }
+            (false, true) => {
+                println!("Searching in files {:?}", file_path);
+                if let Some(out_dir) = output.clone() {
+                    if !PathBuf::from(&out_dir).exists() {
+                        return Err(anyhow!("Output directory does not exist"));
+                    }
+                }
+                handle_file_path_vec(query, file_path, ignore_case, output)?;
+            }
+            (true, false) => {
+                println!("Searching in directory {:?}", dir);
+                if let Some(out_dir) = output.clone() {
+                    if !PathBuf::from(&out_dir).exists() {
+                        return Err(anyhow!("Output directory does not exist"));
+                    }
+                }
+                handle_dir_vec(query, dir, ignore_case, output)?;
+            }
+        },
+        Some(Commands::Diff { file1, file2 }) => {
+            println!("Comparing files {} and {}", file1, file2);
+            if !PathBuf::from(file1.clone()).is_file() || !PathBuf::from(file2.clone()).is_file() {
+                return Err(anyhow!("Both files must exist"));
+            }
+            handle_diff(file1, file2)?;
         }
         None => {
             return Err(anyhow!("Please specify a subcommand: find or diff"));
